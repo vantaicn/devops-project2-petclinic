@@ -1,68 +1,113 @@
 pipeline {
-    agent any
+  agent any
+  environment {
+    DOCKER_HUB_USER = 'vantaicn'
+    DOCKER_HUB_PWD = credentials('docker_hub') // Lưu trong Jenkins Credential
+    IMAGE_TAG = ''
+    // GIT_CREDENTIALS_ID = 'github-token' // Dùng để push lại repo Helm
+    // HELM_REPO_DIR = '../spring-petclinic' // Path đến helm chart repo
+  }
 
-    environment {
-        SERVICES = "spring-petclinic-vets-service,spring-petclinic-customers-service,spring-petclinic-visits-service,spring-petclinic-admin-server,spring-petclinic-api-gateway,spring-petclinic-config-server,spring-petclinic-genai-service,spring-petclinic-discovery-server"
+  stages {
+    stage('Prepare') {
+      steps {
+        script {
+          // Lấy commit ID nếu là push hoặc PR
+          if (env.GIT_COMMIT) {
+            IMAGE_TAG = env.GIT_COMMIT.take(7)
+          }
+
+          // Nếu là tag release -> dùng tag làm image tag
+          if (env.GIT_TAG_NAME) {
+            IMAGE_TAG = env.GIT_TAG_NAME
+          }
+
+          echo "Image tag sẽ dùng: ${IMAGE_TAG}"
+        }
+      }
     }
 
-    stages {
-        stage('Detect Changed Services') {
-            steps {
-                script {
-                    def changedFiles = sh(script: "git diff --name-only HEAD~1", returnStdout: true).trim().split("\n")
-                    def affectedServices = []
+    stage('Detect Changed Service') {
+      steps {
+        script {
+          def changedFiles = sh(script: "git diff --name-only HEAD~1", returnStdout: true).trim()
+          def matchedService = ''
 
-                    SERVICES.split(',').each { service ->
-                        if (changedFiles.find { it.startsWith(service + "/") }) {
-                            affectedServices.add(service)
-                        }
-                    }
-
-                    if (affectedServices.isEmpty()) {
-                        echo "No services changed. Skipping build."
-                        currentBuild.result = 'SUCCESS'
-                        return
-                    }
-
-                    env.BUILD_SERVICES = affectedServices.join(',')
-                }
+          changedFiles.split('\n').each { file ->
+            if (file.contains("spring-petclinic-") && file.contains("-service/")) {
+              matchedService = file.split('/')[0]
             }
+          }
+
+          if (!matchedService) {
+            error("Không phát hiện service nào bị thay đổi.")
+          }
+
+          env.TARGET_SERVICE = matchedService
+          echo "Service bị thay đổi: ${env.TARGET_SERVICE}"
         }
-
-        stage('Login to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
-                }
-            }
-        }
-
-        stage('Docker Build & Push') {
-            when {
-                expression { return env.BUILD_SERVICES }
-            }
-            steps {
-                script {
-                    def commitId = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    env.COMMIT_ID = commitId
-
-                    env.BUILD_SERVICES.split(',').each { service ->
-                        echo "Building Docker image for ${service} with tag ${commitId}..."
-                        def serviceName = service.replaceFirst('spring-petclinic-', '')
-                        sh """
-                            docker compose build ${serviceName}
-                        """
-
-                        sh """
-                            docker tag springcommunity/${service} vantaicn/${serviceName}:${commitId}
-                        """
-
-                        sh """
-                            docker push vantaicn/${serviceName}:${commitId}
-                        """
-                    }
-                }
-            }
-        }
+      }
     }
+
+    stage('Build Docker Image') {
+      steps {
+        dir("${env.TARGET_SERVICE}") {
+          sh "../mvnw clean install -P buildDocker -Dcontainer.image.tag=${IMAGE_TAG}"
+        }
+      }
+    }
+
+    stage('Push Docker Image') {
+      steps {
+        script {
+          def imageName = "${DOCKER_HUB_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
+          sh """
+            echo "${DOCKER_HUB_PWD}" | docker login -u "${DOCKER_HUB_USER}" --password-stdin
+            docker tag ${env.TARGET_SERVICE}:latest ${imageName}
+            docker push ${imageName}
+          """
+        }
+      }
+    }
+
+    // stage('Update Helm values') {
+    //   steps {
+    //     script {
+    //       def envFile = ''
+    //       if (env.GIT_BRANCH == 'main') {
+    //         envFile = 'values-dev.yaml'
+    //       } else if (env.GIT_TAG_NAME?.startsWith('v')) {
+    //         envFile = 'values-staging.yaml'
+    //       } else {
+    //         error("Không xác định môi trường (dev/staging)")
+    //       }
+
+    //       def service = env.TARGET_SERVICE.replace("spring-petclinic-", "").replace("-service", "")
+    //       def helmValuesFile = "${HELM_REPO_DIR}/${envFile}"
+
+    //       echo "Cập nhật image cho service ${service} trong file ${helmValuesFile}"
+
+    //       sh """
+    //         yq e '.${service}.image.tag = "${IMAGE_TAG}"' -i ${helmValuesFile}
+    //       """
+    //     }
+    //   }
+    // }
+
+    // stage('Commit & Push to Git') {
+    //   steps {
+    //     dir("${HELM_REPO_DIR}") {
+    //       withCredentials([usernamePassword(credentialsId: "${GIT_CREDENTIALS_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+    //         sh """
+    //           git config user.email "ci@example.com"
+    //           git config user.name "jenkins"
+    //           git add .
+    //           git commit -m "Update image for ${env.TARGET_SERVICE} to ${IMAGE_TAG}"
+    //           git push https://${GIT_USER}:${GIT_PASS}@your-git-repo-url HEAD:main
+    //         """
+    //       }
+    //     }
+    //   }
+    // }
+  }
 }
