@@ -1,23 +1,19 @@
 pipeline {
   agent any
+
   environment {
     DOCKER_HUB_USER = 'vantaicn'
-    DOCKER_HUB_PWD = credentials('docker_hub') // Lưu trong Jenkins Credential
     IMAGE_TAG = ''
-    // GIT_CREDENTIALS_ID = 'github-token' // Dùng để push lại repo Helm
-    // HELM_REPO_DIR = '../spring-petclinic' // Path đến helm chart repo
   }
 
   stages {
     stage('Prepare') {
       steps {
         script {
-          // Lấy commit ID nếu là push hoặc PR
           if (env.GIT_COMMIT) {
             IMAGE_TAG = env.GIT_COMMIT.take(7)
           }
 
-          // Nếu là tag release -> dùng tag làm image tag
           if (env.GIT_TAG_NAME) {
             IMAGE_TAG = env.GIT_TAG_NAME
           }
@@ -52,23 +48,27 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         dir("${env.TARGET_SERVICE}") {
-          sh "../mvnw clean install -P buildDocker -Dcontainer.image.tag=${IMAGE_TAG}"
+          sh "../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Dcontainer.image.tag=${IMAGE_TAG}"
         }
       }
     }
 
     stage('Push Docker Image') {
       steps {
-        script {
-          def imageName = "${DOCKER_HUB_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
-          sh """
-            echo "${DOCKER_HUB_PWD}" | docker login -u "${DOCKER_HUB_USER}" --password-stdin
-            docker tag ${env.TARGET_SERVICE}:latest ${imageName}
-            docker push ${imageName}
-          """
+        withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          script {
+            def imageName = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
+            sh """
+              echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+              docker tag ${env.TARGET_SERVICE}:latest ${imageName}
+              docker push ${imageName}
+            """
+          }
         }
       }
     }
+
+    // Nếu bạn cần CD bằng ArgoCD thì mở các stage dưới đây và cấu hình thêm
 
     // stage('Update Helm values') {
     //   steps {
@@ -97,13 +97,13 @@ pipeline {
     // stage('Commit & Push to Git') {
     //   steps {
     //     dir("${HELM_REPO_DIR}") {
-    //       withCredentials([usernamePassword(credentialsId: "${GIT_CREDENTIALS_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+    //       withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
     //         sh """
     //           git config user.email "ci@example.com"
     //           git config user.name "jenkins"
     //           git add .
-    //           git commit -m "Update image for ${env.TARGET_SERVICE} to ${IMAGE_TAG}"
-    //           git push https://${GIT_USER}:${GIT_PASS}@your-git-repo-url HEAD:main
+    //           git commit -m "Update image for ${env.TARGET_SERVICE} to ${IMAGE_TAG}" || echo "Nothing to commit"
+    //           git push https://${GIT_USER}:${GIT_PASS}@github.com/your-org/your-helm-repo.git HEAD:main
     //         """
     //       }
     //     }
