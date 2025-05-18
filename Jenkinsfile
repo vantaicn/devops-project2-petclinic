@@ -48,8 +48,12 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         dir("${env.TARGET_SERVICE}") {
-          sh "../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Dcontainer.image.tag=${IMAGE_TAG}"
+          sh """
+            ../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Dcontainer.image.tag=${IMAGE_TAG} -Ddocker.image.prefix=${DOCKER_HUB_USER}
+            docker images | grep spring-petclinic
+          """
         }
+
       }
     }
 
