@@ -60,7 +60,6 @@ pipeline {
             def imageName = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
             sh """
               echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-              docker tag ${env.TARGET_SERVICE}:latest ${imageName}
               docker push ${imageName}
             """
           }
