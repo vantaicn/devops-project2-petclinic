@@ -49,7 +49,7 @@ pipeline {
       steps {
         dir("${env.TARGET_SERVICE}") {
           sh """
-            ../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Ddocker.image.prefix=${DOCKER_HUB_USER} -Ddocker.image.tag=${IMAGE_TAG}
+            ../mvnw clean install -P buildDocker -Dspring.profiles.active=native -Ddocker.image.prefix=${DOCKER_HUB_USER}
             docker images | grep spring-petclinic
           """
         }
@@ -64,6 +64,7 @@ pipeline {
             def imageName = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
             sh """
               echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+              docker tag ${imageNameLatest} ${imageNameTag}
               docker push ${imageName}
             """
           }
