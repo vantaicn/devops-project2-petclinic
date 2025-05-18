@@ -58,18 +58,19 @@ pipeline {
     }
 
     stage('Push Docker Image') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          script {
-            def imageName = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
-            sh """
-              echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-              docker tag ${imageNameLatest} ${imageNameTag}
-              docker push ${imageName}
-            """
-          }
+        steps {
+            withCredentials([usernamePassword(credentialsId: 'docker_hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            script {
+                def imageLatest = "${DOCKER_USER}/${env.TARGET_SERVICE}:latest"
+                def imageWithTag = "${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}"
+                sh """
+                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                docker tag ${imageLatest} ${imageWithTag}
+                docker push ${imageWithTag}
+                """
+            }
+            }
         }
-      }
     }
 
     // Nếu bạn cần CD bằng ArgoCD thì mở các stage dưới đây và cấu hình thêm
