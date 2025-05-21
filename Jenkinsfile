@@ -11,14 +11,14 @@ pipeline {
       steps {
         script {
           if (env.GIT_COMMIT) {
-            IMAGE_TAG = env.GIT_COMMIT.take(7)
+            env.IMAGE_TAG = env.GIT_COMMIT.take(7)
           }
 
           if (env.GIT_TAG_NAME) {
-            IMAGE_TAG = env.GIT_TAG_NAME
+            env.IMAGE_TAG = env.GIT_TAG_NAME
           }
 
-          echo "Image tag: ${IMAGE_TAG}"
+          echo "Image tag: ${env.IMAGE_TAG}"
         }
       }
     }
