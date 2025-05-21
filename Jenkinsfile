@@ -11,14 +11,14 @@ pipeline {
       steps {
         script {
           if (env.GIT_COMMIT) {
-            env.IMAGE_TAG = env.GIT_COMMIT.take(7)
+            IMAGE_TAG = env.GIT_COMMIT.take(7)
           }
 
           if (env.GIT_TAG_NAME) {
-            env.IMAGE_TAG = env.GIT_TAG_NAME
+            IMAGE_TAG = env.GIT_TAG_NAME
           }
 
-          echo "Image tag: ${env.IMAGE_TAG}"
+          echo "Image tag: ${IMAGE_TAG}"
         }
       }
     }
@@ -62,6 +62,7 @@ pipeline {
             script {
                 sh """
                 echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                docker tag ${DOCKER_HUB_USER}/${env.TARGET_SERVICE}:latest ${DOCKER_HUB_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}
                 docker push ${DOCKER_USER}/${env.TARGET_SERVICE}:${IMAGE_TAG}
                 """
             }
